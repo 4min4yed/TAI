@@ -1,0 +1,11 @@
+fastapi==0.95.2
+uvicorn[standard]==0.22.0
+sqlalchemy==1.4.48
+alembic==1.11.1
+psycopg2-binary==2.9.7
+redis==4.5.5
+python-dotenv==1.0.0
+pydantic==1.10.9
+argon2-cffi==21.3.0
+pytest==7.4.0
+httpx==0.24.1
