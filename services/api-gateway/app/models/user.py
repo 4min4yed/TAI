@@ -10,4 +10,6 @@ class User(Base):
     id = Column(Integer, primary_key=True)
     email = Column(String, nullable=False, unique=True)
     password_hash = Column(String, nullable=False)
+    tenant_id = Column(Integer, ForeignKey('tenants.id'), nullable=False)
+    role = Column(String, nullable=False, default='user')
     is_active = Column(Boolean, default=True)

@@ -11,8 +11,18 @@ down_revision = '0001_init_multitenant_rls'
 
 
 def upgrade():
-    op.create_table('users', sa.Column('id', sa.Integer, primary_key=True), sa.Column('email', sa.String, nullable=False))
-    op.create_table('api_keys', sa.Column('id', sa.Integer, primary_key=True), sa.Column('key_hash', sa.String, nullable=False))
+    op.create_table('users', 
+        sa.Column('id', sa.Integer, primary_key=True), 
+        sa.Column('email', sa.String, nullable=False, unique=True),
+        sa.Column('password_hash', sa.String, nullable=False),
+        sa.Column('tenant_id', sa.Integer, nullable=False),
+        sa.Column('is_active', sa.Boolean, default=True),
+        sa.ForeignKeyConstraint(['tenant_id'], ['tenants.id'])
+    )
+    op.create_table('api_keys', 
+        sa.Column('id', sa.Integer, primary_key=True), 
+        sa.Column('key_hash', sa.String, nullable=False)
+    )
 
 
 def downgrade():

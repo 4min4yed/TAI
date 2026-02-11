@@ -17,8 +17,7 @@ depends_on = None
 def upgrade():
     # Example: create tenants table and enable RLS in Postgres
     op.create_table('tenants', sa.Column('id', sa.Integer, primary_key=True), sa.Column('name', sa.String, nullable=False))
-    # RLS creation requires raw SQL in migrations
-    op.execute("-- Add RLS policies for tenant isolation here")
+    # RLS policies can be added in future migrations with actual SQL statements
 
 
 def downgrade():
