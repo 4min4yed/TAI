@@ -27,7 +27,7 @@ export default function SignupPage() {
     firstName: "",
     lastName: "",
     email: "",
-    company: "",
+    tenant_name: "",
     password: "",
     confirmPassword: "",
   });
@@ -54,7 +54,7 @@ export default function SignupPage() {
         if (!emailRegex.test(value))
           return "Please enter a valid email address";
         return "";
-      case "company":
+      case "tenant_name":
         if (!value.trim()) return "Company name is required";
         return "";
       case "password":
@@ -117,19 +117,17 @@ export default function SignupPage() {
 
     try {
       // TODO: Replace with actual API call
-      // const response = await fetch('/api/auth/signup', {
-      //   method: 'POST',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify(formData)
-      // });
+      const { confirmPassword, ...payload } = formData;
+      const response = await fetch('http://127.0.0.1:8000/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
 
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-
-      console.log("Signup data:", formData);
-
-      // Redirect to verification page or dashboard
-      window.location.href = "/verify-email";
+      console.log("Signup data:", payload);
+      console.log("response from API:", response);
+      // Redirect to verification page (dashboard for now)
+      window.location.href = "/";
     } catch (err) {
       setError("Failed to create account. Please try again.");
       console.error("Signup error:", err);
@@ -425,7 +423,7 @@ export default function SignupPage() {
               {/* Company Input */}
               <div>
                 <label
-                  htmlFor="company"
+                  htmlFor="tenant_name"
                   className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2"
                 >
                   Company Name
@@ -433,25 +431,25 @@ export default function SignupPage() {
                 <div className="relative">
                   <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
                   <input
-                    id="company"
-                    name="company"
+                    id="tenant_name"
+                    name="tenant_name"
                     type="text"
                     required
                     placeholder="Acme Inc."
-                    value={formData.company}
+                    value={formData.tenant_name}
                     onChange={handleInputChange}
                     onBlur={handleBlur}
                     className={cn(
                       "w-full pl-11 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder:text-slate-400",
-                      errors.company
+                      errors.tenant_name
                         ? "border-red-300 dark:border-red-700"
                         : "border-slate-300 dark:border-slate-700",
                     )}
                   />
                 </div>
-                {errors.company && (
+                {errors.tenant_name && (
                   <p className="text-sm text-red-600 dark:text-red-400 mt-1">
-                    {errors.company}
+                    {errors.tenant_name}
                   </p>
                 )}
               </div>

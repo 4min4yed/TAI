@@ -2,6 +2,9 @@
 from .jwt_handler import create_Ajwt, create_Rt
 import random
 
+
+
+
 class SessionManager:
     def create_session(self, user_id: int, tenant_id: int):
         Ajwt_token=create_Ajwt(user_id, tenant_id)
@@ -10,3 +13,6 @@ class SessionManager:
     def rotate_refresh(self, session_id: int):
         # Logic to rotate refresh token
         pass
+
+
+

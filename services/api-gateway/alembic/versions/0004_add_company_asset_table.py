@@ -11,7 +11,7 @@ down_revision = '0003_add_file_hash_deduplication'
 
 
 def upgrade():
-    op.create_table('company_assets', sa.Column('id', sa.Integer, primary_key=True), sa.Column('tenant_id', sa.Integer), sa.Column('asset_type', sa.String), sa.Column('path', sa.String))
+    op.create_table('company_assets', sa.Column('id', sa.String, primary_key=True), sa.Column('tenant_id', sa.String), sa.Column('asset_type', sa.String), sa.Column('path', sa.String))
 
 
 def downgrade():

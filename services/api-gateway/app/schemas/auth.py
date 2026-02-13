@@ -19,7 +19,8 @@ class RegisterRequest(BaseModel):
     tenant_name: str
     email: str
     password: str
-
+    firstName: str
+    lastName: str
 
 class RegisterResponse(BaseModel):
     id: int
