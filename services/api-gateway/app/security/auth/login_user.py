@@ -8,15 +8,23 @@ import traceback
 
 logger = logging.getLogger(__name__)
 
-
 async def login_user(db, email: str, password: str):
     user = db.query(User).filter(User.email == email).first()
-    if not user or not verify_password(user.password_hash, password):
+    if not user :
+        print("wrong mail")
         raise HTTPException(status_code=401, detail="Invalid credentials")
+    if not verify_password(user.password_hash, password):
+        print("Invalid pswd")
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    if user.is_verified == False:
+        print("Not Verified")
+        raise HTTPException(status_code=403, detail="Email not verified")
     if not user.is_active:
+        print("Account Disabled")
         raise HTTPException(status_code=403, detail="User account is disabled")
     if requires_mfa(user):
         # TODO: Implement temporary MFA token generation
+        print("MFA!")
         raise HTTPException(status_code=403, detail="MFA required")
 
     tenant_id = user.tenant_id

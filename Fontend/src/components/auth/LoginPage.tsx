@@ -76,20 +76,14 @@ export default function LoginPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password, rememberMe })
       });
-
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-
-      // Simulate success
-      console.log("Email login:", { email, password, rememberMe });
-
-      // Store token if remember me is checked
+      if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(errorData.detail || "Login failed");
+      }
       if (rememberMe) {
         localStorage.setItem("rememberMe", "true");
-      }
-
-      // Redirect to dashboard after successful login
-      window.location.href = "/dashboard";
+      }    
+      window.location.href = "/";
     } catch (err) {
       setError("Invalid email or password. Please try again.");
       console.error("Login error:", err);

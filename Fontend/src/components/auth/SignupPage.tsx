@@ -116,18 +116,17 @@ export default function SignupPage() {
     setIsLoading(true);
 
     try {
-      // TODO: Replace with actual API call
+      //API call
       const { confirmPassword, ...payload } = formData;
       const response = await fetch('http://127.0.0.1:8000/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-
-      console.log("Signup data:", payload);
-      console.log("response from API:", response);
+      // console.log("Signup data:", payload);
+      // console.log("response from API:", response);
       // Redirect to verification page (dashboard for now)
-      window.location.href = "/";
+      window.location.href = "/Verification";
     } catch (err) {
       setError("Failed to create account. Please try again.");
       console.error("Signup error:", err);

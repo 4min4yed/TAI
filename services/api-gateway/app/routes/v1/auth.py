@@ -17,5 +17,6 @@ async def login(payload: LoginRequest, db=Depends(get_db)):
 @router.post("/register", response_model=RegisterResponse)
 async def register(payload: RegisterRequest, db=Depends(get_db)):
     print("Registering user with payload:", payload)
-    return {payload, await register_tenant(db, payload.tenant_name, payload.email, payload.password, payload.firstName, payload.lastName)}
+    return await register_tenant(db, payload.tenant_name, payload.email, payload.password, payload.firstName, payload.lastName)
+
 
