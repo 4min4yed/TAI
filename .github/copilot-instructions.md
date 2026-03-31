@@ -60,5 +60,3 @@ Purpose: help AI coding agents become productive quickly in the `services/api-ga
 - Ensure no secrets are committed; prefer `.env.sample` updates and mention required Vault setup.
 
 ---
-
-If anything above is unclear or you'd like more/less detail for a specific area (migrations, auth, or middleware order), tell me which section to expand and I'll iterate. ✅

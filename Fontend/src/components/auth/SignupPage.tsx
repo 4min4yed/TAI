@@ -36,6 +36,7 @@ export default function SignupPage() {
   const [acceptTerms, setAcceptTerms] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const validateField = (name: string, value: string): string => {
@@ -92,6 +93,7 @@ export default function SignupPage() {
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setSuccessMessage("");
 
     // Validate all fields
     const newErrors: Record<string, string> = {};
@@ -118,17 +120,30 @@ export default function SignupPage() {
     try {
       //API call
       const { confirmPassword, ...payload } = formData;
-      const response = await fetch('http://127.0.0.1:8000/auth/register', {
+      const response = await fetch('http://127.0.0.1:8000/v1/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      // console.log("Signup data:", payload);
-      // console.log("response from API:", response);
-      // Redirect to verification page (dashboard for now)
-      window.location.href = "/Verification";
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.detail || "Failed to create account.");
+      }
+
+      if (data.status === "already_exists") {
+        setError("Account already exists. Please sign in from the login page.");
+        return;
+      }
+
+      const encodedEmail = encodeURIComponent(formData.email.trim().toLowerCase());
+      setSuccessMessage("Verification email sent. Redirecting to verification page...");
+      window.setTimeout(() => {
+        window.location.href = `/verify?email=${encodedEmail}`;
+      }, 2200);
     } catch (err) {
-      setError("Failed to create account. Please try again.");
+      const message = err instanceof Error ? err.message : "Failed to create account. Please try again.";
+      setError(message);
       console.error("Signup error:", err);
     } finally {
       setIsLoading(false);
@@ -316,6 +331,15 @@ export default function SignupPage() {
                     />
                   </svg>
                   {error}
+                </p>
+              </div>
+            )}
+
+            {successMessage && (
+              <div className="mb-4 p-4 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-lg">
+                <p className="text-sm text-emerald-700 dark:text-emerald-300 flex items-center gap-2">
+                  <CheckCircle2 className="w-5 h-5" />
+                  {successMessage}
                 </p>
               </div>
             )}

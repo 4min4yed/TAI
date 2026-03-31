@@ -25,7 +25,10 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isResending, setIsResending] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [showResendVerification, setShowResendVerification] = useState(false);
   const [emailError, setEmailError] = useState("");
   const [passwordError, setPasswordError] = useState("");
 
@@ -59,6 +62,8 @@ export default function LoginPage() {
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setNotice("");
+    setShowResendVerification(false);
 
     // Validate form
     const isEmailValid = validateEmail(email);
@@ -71,24 +76,55 @@ export default function LoginPage() {
     setIsLoading(true);
 
     try {
-      const response = await fetch('http://127.0.0.1:8000/auth/login', {
+      const response = await fetch('http://127.0.0.1:8000/v1/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password, rememberMe })
       });
       if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.detail || "Login failed");
+        const errorData = await response.json();
+        if (response.status === 403 && String(errorData?.detail || "").toLowerCase().includes("verify")) {
+          setShowResendVerification(true);
+          throw new Error("Please verify your email.");
+        }
+        throw new Error(errorData.detail || "Login failed");
       }
       if (rememberMe) {
         localStorage.setItem("rememberMe", "true");
       }    
       window.location.href = "/";
     } catch (err) {
-      setError("Invalid email or password. Please try again.");
+      const message = err instanceof Error ? err.message : "Invalid email or password. Please try again.";
+      setError(message);
       console.error("Login error:", err);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleResendVerification = async () => {
+    if (!validateEmail(email)) {
+      return;
+    }
+
+    setIsResending(true);
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch("http://127.0.0.1:8000/v1/auth/resend-verification", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.detail || "Unable to resend verification instructions.");
+      }
+      setNotice(data.message || "If an account exists, we've sent instructions.");
+    } catch (err) {
+      setError("Unable to resend verification instructions.");
+    } finally {
+      setIsResending(false);
     }
   };
 
@@ -284,6 +320,24 @@ export default function LoginPage() {
                   {error}
                 </p>
               </div>
+            )}
+
+            {notice && (
+              <div className="p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+                <p className="text-sm text-green-700 dark:text-green-300">{notice}</p>
+              </div>
+            )}
+
+            {showResendVerification && (
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={handleResendVerification}
+                disabled={isResending}
+              >
+                {isResending ? "Sending verification email..." : "Resend verification email"}
+              </Button>
             )}
 
             {/* Email/Password Form */}

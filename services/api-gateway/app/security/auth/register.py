@@ -2,44 +2,83 @@ from fastapi import HTTPException
 from app.models.tenant import Tenant
 from app.models.user import User
 from app.core.security import hash_password
-# from app.security.auth.session_manager import SessionManager
+from app.security.auth.email_verif import issue_verification_token, send_verification_email
+from app.security.auth.rate_limit import auth_rate_limiter
 import logging
-import traceback
-from sqlalchemy.exc import IntegrityError
-# import uuid
+from sqlalchemy.exc import IntegrityError, ProgrammingError
+
 logger = logging.getLogger(__name__)
 
 async def register_tenant(db, tenant_name: str, email: str, password: str, first_name: str, last_name: str):
     try:
-        # tenant = Tenant(name=tenant_name)
+        normalized_email = email.strip().lower()
+        if not auth_rate_limiter.allow(f"signup:{normalized_email}", max_attempts=5, window_seconds=15 * 60):
+            raise HTTPException(status_code=429, detail="Too many signup attempts. Please try again later.")
+
         tenant = db.query(Tenant).filter(Tenant.name == tenant_name).first()
         if not tenant:
             tenant = Tenant(name=tenant_name)
             db.add(tenant)
             db.flush()
-            # raise HTTPException(status_code=409, detail="Tenant with this name already exists")
-        
-        user = User(first_name=first_name, last_name=last_name, email=email, password_hash=hash_password(password), tenant_id=tenant.id, role='owner', is_active=True, is_verified=False)
-        db.add(user)
-        db.commit()
+        user = db.query(User).filter(User.email == normalized_email).first()
 
-        # tokens = manager.create_session(user.id, tenant.id)
-        print(f"id: {user.id}, email: {user.email}, tenant_id: {tenant.id}")  
+        if user and user.is_verified:
+            return {
+                "status": "already_exists",
+                "message": "Account already exists - please log in",
+            }
+
+        if user and not user.is_verified:
+            user.first_name = first_name
+            user.last_name = last_name
+            user.password_hash = hash_password(password)
+            user.tenant_id = tenant.id
+            user.role = "owner"
+            user.is_active = True
+        else:
+            user = User(
+                first_name=first_name,
+                last_name=last_name,
+                email=normalized_email,
+                password_hash=hash_password(password),
+                tenant_id=tenant.id,
+                role="owner",
+                is_active=True,
+                is_verified=False,
+            )
+            db.add(user)
+
+        db.flush()
+        verification_token = issue_verification_token(db, user.id, user.email)
+        email_sent = await send_verification_email(user.email, user.id, verification_token)
+        if not email_sent:
+            raise HTTPException(
+                status_code=502,
+                detail="Unable to send verification email right now. Please try again later.",
+            )
+
         return {
-            "id": user.id,
-            "email": user.email,
-            "tenant_id": tenant.id,
-            "access_token": "temporary_token", # Replace with actual token logic
-            "refresh_token": "temporary_token"
-        }     
-        # return {"msg": "Registration successful"}
-    
+            "status": "verification_required",
+            "message": "If an account can be created, we've sent verification instructions.",
+        }
+
     except IntegrityError as exc:
         db.rollback()
         logger.warning("Registration conflict for %s: %s", email, exc)
-        raise HTTPException(status_code=409, detail="Email already registered")
+        raise HTTPException(status_code=409, detail="Unable to process registration")
+    except ProgrammingError as exc:
+        db.rollback()
+        if "email_verification_tokens" in str(exc):
+            logger.error("Auth verification table missing. Run alembic upgrade head.")
+            raise HTTPException(
+                status_code=503,
+                detail="Service not ready: database migration missing. Please run alembic upgrade head.",
+            )
+        raise
+    except HTTPException:
+        db.rollback()
+        raise
     except Exception as exc:
         db.rollback() # Ensure we rollback on any exception to avoid leaving the session in an error state
-        tb = traceback.format_exc()
         logger.exception("Failed to register user %s: %s", email, exc)
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(exc)}") #to be removed in Prod
+        raise HTTPException(status_code=500, detail="Internal server error")

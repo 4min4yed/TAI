@@ -23,9 +23,37 @@ class RegisterRequest(BaseModel):
     lastName: str
 
 class RegisterResponse(BaseModel):
-    id: int
+    status: str
+    message: str
+
+
+class VerifyEmailValidateRequest(BaseModel):
+    token: str
+
+
+class VerifyEmailValidateResponse(BaseModel):
+    valid: bool
+    message: str
+
+
+class VerifyEmailConfirmRequest(BaseModel):
+    token: str
+    password: str
+
+
+class VerifyEmailConfirmResponse(BaseModel):
+    status: str
+    message: str
+
+
+class ResendVerificationRequest(BaseModel):
     email: str
-    tenant_id: int
-    access_token: str
-    refresh_token: str
-    token_type: str = "bearer"
+
+
+class GenericAuthActionResponse(BaseModel):
+    status: str
+    message: str
+
+
+class NotMeRequest(BaseModel):
+    token: str
