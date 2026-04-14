@@ -14,6 +14,8 @@ Developer notes:
 - Config is Pydantic-based in `app/core/config.py` and reads from environment
 - Use `app/core/gateway_clients` for internal service calls
 - Middleware layers are explicit and order-sensitive (see `app/middleware`)
+- Current tenancy pipeline: `RequestID -> Logging -> TenantCtx -> RLSBind`
+- TenantCtx extracts `tenant_id` from authenticated JWT claims; DB sessions bind it to `app.current_tenant` for PostgreSQL RLS
 - Signup/verification flow uses explicit email verification with expiring single-use tokens:
 	- `POST /v1/auth/register` creates or refreshes unverified accounts and sends verification email
 	- `POST /v1/auth/verify-email/validate` checks token validity

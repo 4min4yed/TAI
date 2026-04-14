@@ -2,6 +2,9 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from .rls import apply_rls_context_to_db_session
+from .tenant_context import get_current_tenant_id
+
 engine = None
 SessionLocal = None
 
@@ -12,11 +15,14 @@ def init_db(url: str):
     SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 
-def get_db(): #Explanation: this function is used as a dependency in FastAPI routes to provide a database session  
+def get_db():
     if SessionLocal is None:
         raise RuntimeError("DB not initialized")
-    db = SessionLocal() #db is now a SQLAlchemy session object which is used to interact with the database
+    db = SessionLocal()
     try:
-        yield db #Explanation: yield allows this function to be used as a generator, providing a session to the route handler, because yield is like return but allows the function to be resumed later
+        tenant_id = get_current_tenant_id()
+        if tenant_id:
+            apply_rls_context_to_db_session(db, tenant_id)
+        yield db
     finally:
         db.close()

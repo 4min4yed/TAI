@@ -7,9 +7,16 @@ from fastapi.middleware.cors import CORSMiddleware
 settings = Settings()
 app = create_app()
 
+
+def _build_allowed_origins() -> list[str]:
+    origins = [origin.strip() for origin in settings.CORS_ALLOWED_ORIGINS.split(",") if origin.strip()]
+    if settings.FRONTEND_URL and settings.FRONTEND_URL not in origins:
+        origins.append(settings.FRONTEND_URL)
+    return origins
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"], # Add your frontend URL
+    allow_origins=_build_allowed_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

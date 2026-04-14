@@ -1,18 +1,70 @@
 """Session lifecycle management (refresh rotation, expiry policies)."""
-from .jwt_handler import create_Ajwt, create_Rt
-import random
 
-
+from app.security.auth.jwt_handler import (
+    create_access_token,
+    create_refresh_token,
+    token_expiry_from_claims,
+)
+from app.security.auth.token_store import persist_refresh_token
 
 
 class SessionManager:
-    def create_session(self, user_id: int, tenant_id: int, role: str):
-        Ajwt_token=create_Ajwt(user_id, tenant_id, role)
-        R_token=create_Rt(user_id, tenant_id)
-        return {"access_token": Ajwt_token, "refresh_token": R_token, "token_type": "bearer"}
-    def rotate_refresh(self, session_id: int):
-        # Logic to rotate refresh token
-        pass
+    def create_session(
+        self,
+        db,
+        *,
+        user_id: str,
+        tenant_id: str,
+        role: str,
+        first_name: str,
+        last_name: str,
+        email: str,
+        tenant_name: str,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
+        refresh_family: str | None = None,
+        parent_refresh_jti: str | None = None,
+    ):
+        access_token, access_claims = create_access_token(user_id, tenant_id, role)
+        refresh_token, refresh_claims = create_refresh_token(
+            user_id,
+            tenant_id,
+            role,
+            family_id=refresh_family,
+        )
+
+        persist_refresh_token(
+            db,
+            raw_token=refresh_token,
+            jti=refresh_claims["jti"],
+            user_id=user_id,
+            tenant_id=tenant_id,
+            family_id=refresh_claims["family"],
+            expires_at=token_expiry_from_claims(refresh_claims),
+            parent_jti=parent_refresh_jti,
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
+        db.commit()
+
+        return {
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "refresh_jti": refresh_claims["jti"],
+            "refresh_family": refresh_claims["family"],
+            "token_type": "bearer",
+            "user": {
+                "id": user_id,
+                "first_name": first_name,
+                "last_name": last_name,
+                "email": email,
+                "role": role,
+                "tenant_id": tenant_id,
+                "tenant_name": tenant_name,
+            },
+            "access_claims": access_claims,
+            "refresh_claims": refresh_claims,
+        }
 
 
 

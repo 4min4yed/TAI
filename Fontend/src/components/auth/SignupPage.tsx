@@ -21,6 +21,7 @@ import {
   Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getApiBaseUrl } from "@/lib/api-base";
 
 export default function SignupPage() {
   const [formData, setFormData] = useState({
@@ -38,6 +39,7 @@ export default function SignupPage() {
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const apiBase = getApiBaseUrl();
 
   const validateField = (name: string, value: string): string => {
     switch (name) {
@@ -120,7 +122,7 @@ export default function SignupPage() {
     try {
       //API call
       const { confirmPassword, ...payload } = formData;
-      const response = await fetch('http://127.0.0.1:8000/v1/auth/register', {
+      const response = await fetch(`${apiBase}/v1/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -132,7 +134,7 @@ export default function SignupPage() {
       }
 
       if (data.status === "already_exists") {
-        setError("Account already exists. Please sign in from the login page.");
+        setError("Account already exists. Please sign in.");
         return;
       }
 

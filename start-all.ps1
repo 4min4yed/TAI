@@ -8,6 +8,14 @@ Write-Host ""
 $rootDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Write-Host "Project root: $rootDir" -ForegroundColor Cyan
 
+$pythonExe = Join-Path $rootDir ".venv\Scripts\python.exe"
+if (-not (Test-Path $pythonExe)) {
+    Write-Host " Python virtual environment not found at $pythonExe" -ForegroundColor Red
+    Write-Host "   Create it first: python -m venv .venv" -ForegroundColor Yellow
+    exit 1
+}
+Write-Host " Using Python: $pythonExe" -ForegroundColor Cyan
+
 # Check and start Docker Desktop if needed
 Write-Host ""
 Write-Host " Checking Docker Desktop..." -ForegroundColor Yellow
@@ -135,10 +143,30 @@ try {
         
         Write-Host " Database reset complete!" -ForegroundColor Green
         
-        # Run migrations
+        # Run migrations in two phases.
+        # Phase 1 upgrades to 0008 so the alembic_version table exists.
+        # Then widen version_num to support longer custom revision ids.
+        # Phase 2 upgrades to head.
         Write-Host " Running database migrations..." -ForegroundColor Cyan
         Push-Location $composePath
-        & python -m alembic upgrade head 2>&1 | Out-Null
+        & $pythonExe -m alembic upgrade 0008_enforce_documents_rls
+        if ($LASTEXITCODE -ne 0) {
+            Pop-Location
+            throw "Alembic upgrade to 0008_enforce_documents_rls failed."
+        }
+
+        & docker-compose -f "$composePath\docker-compose.yml" exec -T postgres psql -U postgres -d api_gateway -c "ALTER TABLE alembic_version ALTER COLUMN version_num TYPE VARCHAR(128);"
+        if ($LASTEXITCODE -ne 0) {
+            Pop-Location
+            throw "Failed to widen alembic_version.version_num column."
+        }
+
+        & $pythonExe -m alembic upgrade head
+        if ($LASTEXITCODE -ne 0) {
+            Pop-Location
+            throw "Alembic upgrade to head failed."
+        }
+
         Pop-Location
         Write-Host " Migrations complete!" -ForegroundColor Green
     } else {
@@ -153,7 +181,7 @@ try {
 # Service 2: FastAPI Server
 Write-Host ""
 Write-Host " Starting FastAPI Server..." -ForegroundColor Yellow
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$composePath'; Write-Host 'Starting FastAPI server on http://127.0.0.1:8000' -ForegroundColor Cyan; python ./start_simple.py" -WindowStyle Normal
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$composePath'; Write-Host 'Starting FastAPI server on http://127.0.0.1:8000' -ForegroundColor Cyan; & '$pythonExe' ./start_simple.py" -WindowStyle Normal
 
 # Wait a bit for FastAPI to start
 Start-Sleep -Seconds 3
@@ -170,7 +198,7 @@ Write-Host ""
 Write-Host "  Service URLs:" -ForegroundColor Cyan
 Write-Host "   Frontend:  http://127.0.0.1:3000" -ForegroundColor White
 Write-Host "   API Gateway: http://127.0.0.1:8000" -ForegroundColor White
-Write-Host "   Database:  http://127.0.0.1:5432" -ForegroundColor White
+Write-Host "   Database:  http://127.0.0.1:55432" -ForegroundColor White
 Write-Host ""
 Write-Host " Each service is running in its own terminal window." -ForegroundColor Gray
 Write-Host "   Close each window to stop the respective service." -ForegroundColor Gray

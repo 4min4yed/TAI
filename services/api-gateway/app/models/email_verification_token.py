@@ -8,7 +8,7 @@ class EmailVerificationToken(Base):
     __tablename__ = "email_verification_tokens"
 
     id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     email = Column(String, nullable=False, index=True)
     token_hash = Column(String(64), nullable=False, unique=True, index=True)
     is_used = Column(Boolean, nullable=False, default=False, server_default="false")

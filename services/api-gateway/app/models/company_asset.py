@@ -5,6 +5,6 @@ from .base import Base
 class CompanyAsset(Base):
     __tablename__ = 'company_assets'
     id = Column(Integer, primary_key=True)
-    tenant_id = Column(Integer, ForeignKey('tenants.id'))
+    tenant_id = Column(String(36), ForeignKey('tenants.id'))
     asset_type = Column(String)
     path = Column(String)

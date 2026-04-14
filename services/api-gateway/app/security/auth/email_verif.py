@@ -33,7 +33,7 @@ def hash_verification_token(raw_token: str) -> str:
     return hashlib.sha256(digest_input).hexdigest()
 
 
-def issue_verification_token(db: Session, user_id: int, email: str) -> str:
+def issue_verification_token(db: Session, user_id: str, email: str) -> str:
     raw_token = secrets.token_urlsafe(48)
     token_hash = hash_verification_token(raw_token)
     ttl_minutes = max(10, min(settings.EMAIL_VERIFICATION_TTL_MINUTES, 1440))
@@ -76,6 +76,21 @@ def get_valid_token_record(db: Session, raw_token: str) -> Optional[EmailVerific
         return None
     if as_utc(record.expires_at) < utc_now():
         return None
+
+    # Defense-in-depth: accept only the latest active token for a user.
+    # This guarantees older links are rejected even if they were not marked
+    # invalidated due to an earlier persistence inconsistency.
+    newer_active_token_exists = db.query(EmailVerificationToken.id).filter(
+        EmailVerificationToken.user_id == record.user_id,
+        EmailVerificationToken.id != record.id,
+        EmailVerificationToken.is_used.is_(False),
+        EmailVerificationToken.is_invalidated.is_(False),
+        EmailVerificationToken.expires_at >= utc_now(),
+        EmailVerificationToken.created_at > record.created_at,
+    ).first()
+    if newer_active_token_exists:
+        return None
+
     return record
 
 

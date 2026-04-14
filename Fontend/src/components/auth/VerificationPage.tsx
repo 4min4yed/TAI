@@ -5,6 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Mail, ArrowRight, CheckCircle2, ShieldCheck, RefreshCw, AlertTriangle } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { clearAuthSession } from "@/lib/auth-storage";
+import { getApiBaseUrl } from "@/lib/api-base";
 
 export default function VerificationPage() {
   const router = useRouter();
@@ -19,26 +21,38 @@ export default function VerificationPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [isVerified, setIsVerified] = useState(false);
-  const [tokenState, setTokenState] = useState<"checking" | "valid" | "invalid">("checking");
+  const [tokenState, setTokenState] = useState<"idle" | "checking" | "valid" | "invalid">("checking");
+  const [requiresPasswordSetup, setRequiresPasswordSetup] = useState(false);
   const [password, setPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [emailForResend, setEmailForResend] = useState(prefilledEmail);
+  const apiBase = getApiBaseUrl();
 
   useEffect(() => {
     setEmailForResend(prefilledEmail);
   }, [prefilledEmail]);
 
   useEffect(() => {
+    if (!token) {
+      return;
+    }
+    // If this tab is being used to verify another account, clear any existing session first.
+    clearAuthSession();
+  }, [token]);
+
+  useEffect(() => {
     const validateToken = async () => {
       if (!token) {
-        setTokenState("invalid");
-        setError("Missing verification token.");
+        setTokenState("idle");
+        setError("");
         return;
       }
 
       setTokenState("checking");
       setError("");
       try {
-        const response = await fetch("http://127.0.0.1:8000/v1/auth/verify-email/validate", {
+        const response = await fetch(`${apiBase}/v1/auth/verify-email/validate`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ token }),
@@ -49,6 +63,7 @@ export default function VerificationPage() {
           setError(data?.message || "Verification link is invalid or has expired.");
           return;
         }
+        setRequiresPasswordSetup(Boolean(data?.requires_password_setup));
         setTokenState("valid");
       } catch (err) {
         setTokenState("invalid");
@@ -69,7 +84,7 @@ export default function VerificationPage() {
       setError("");
       setNotice("");
       try {
-        const response = await fetch("http://127.0.0.1:8000/v1/auth/verify-email/not-me", {
+        const response = await fetch(`${apiBase}/v1/auth/verify-email/not-me`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ token }),
@@ -90,9 +105,24 @@ export default function VerificationPage() {
   }, [action, token]);
 
   const handleVerify = async () => {
-    if (!password) {
-      setError("Please enter your password to confirm this verification.");
-      return;
+    if (requiresPasswordSetup) {
+      if (!newPassword || !confirmPassword) {
+        setError("Please create and confirm your password.");
+        return;
+      }
+      if (newPassword !== confirmPassword) {
+        setError("Passwords do not match.");
+        return;
+      }
+      if (newPassword.length < 8) {
+        setError("Password must be at least 8 characters.");
+        return;
+      }
+    } else {
+      if (!password) {
+        setError("Please enter your password to confirm this verification.");
+        return;
+      }
     }
 
     setIsLoading(true);
@@ -100,10 +130,14 @@ export default function VerificationPage() {
     setNotice("");
     
     try {
-      const response = await fetch("http://127.0.0.1:8000/v1/auth/verify-email/confirm", {
+      const response = await fetch(`${apiBase}/v1/auth/verify-email/confirm`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, password }),
+        body: JSON.stringify(
+          requiresPasswordSetup
+            ? { token, new_password: newPassword, confirm_password: confirmPassword }
+            : { token, password }
+        ),
       });
       const data = await response.json();
       if (!response.ok || data.status !== "verified") {
@@ -113,6 +147,7 @@ export default function VerificationPage() {
 
       setIsVerified(true);
       setNotice("Email verified. Redirecting to sign in...");
+      clearAuthSession();
       setTimeout(() => {
         router.push("/login");
       }, 1200);
@@ -133,7 +168,7 @@ export default function VerificationPage() {
     setError("");
     setNotice("");
     try {
-      const response = await fetch("http://127.0.0.1:8000/v1/auth/resend-verification", {
+      const response = await fetch(`${apiBase}/v1/auth/resend-verification`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: emailForResend }),
@@ -159,7 +194,7 @@ export default function VerificationPage() {
     setError("");
     setNotice("");
     try {
-      const response = await fetch("http://127.0.0.1:8000/v1/auth/verify-email/not-me", {
+      const response = await fetch(`${apiBase}/v1/auth/verify-email/not-me`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token }),
@@ -197,7 +232,11 @@ export default function VerificationPage() {
           <p className="text-slate-600 dark:text-slate-400">
             {isVerified 
               ? "Your account is now active. You will be redirected to login."
-              : "Use the verification link token and confirm with your password to activate your account."}
+              : tokenState === "idle"
+              ? "We sent a verification email. Use the link in your inbox, or request a new link below."
+                : requiresPasswordSetup
+                ? "Create your password to activate this invited account."
+                : "Use the verification link token and confirm with your password to activate your account."}
           </p>
 
           {tokenState === "checking" && !isVerified && (
@@ -218,7 +257,7 @@ export default function VerificationPage() {
             </div>
           )}
 
-          {!isVerified && tokenState === "valid" ? (
+          {!isVerified && tokenState === "valid" && !requiresPasswordSetup ? (
             <div className="space-y-3 text-left">
               <label
                 htmlFor="verification-password"
@@ -232,6 +271,39 @@ export default function VerificationPage() {
                 value={password}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)}
                 placeholder="Enter your signup password"
+                className="w-full px-3 py-2 border rounded-md bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white"
+              />
+            </div>
+          ) : null}
+
+          {!isVerified && tokenState === "valid" && requiresPasswordSetup ? (
+            <div className="space-y-3 text-left">
+              <label
+                htmlFor="verification-new-password"
+                className="block text-sm font-medium text-slate-700 dark:text-slate-300"
+              >
+                Create password
+              </label>
+              <input
+                id="verification-new-password"
+                type="password"
+                value={newPassword}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewPassword(e.target.value)}
+                placeholder="Minimum 8 characters"
+                className="w-full px-3 py-2 border rounded-md bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white"
+              />
+              <label
+                htmlFor="verification-confirm-password"
+                className="block text-sm font-medium text-slate-700 dark:text-slate-300"
+              >
+                Confirm password
+              </label>
+              <input
+                id="verification-confirm-password"
+                type="password"
+                value={confirmPassword}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setConfirmPassword(e.target.value)}
+                placeholder="Retype password"
                 className="w-full px-3 py-2 border rounded-md bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white"
               />
             </div>
@@ -260,12 +332,12 @@ export default function VerificationPage() {
               <span>Go to Login</span>
               <ArrowRight className="w-5 h-5" />
             </Button>
-          ) : (
+          ) : tokenState === "invalid" ? (
             <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg text-sm text-amber-700 dark:text-amber-300 flex items-center gap-2 text-left">
               <AlertTriangle className="w-4 h-4 shrink-0" />
               <span>This link is invalid or expired. You can request a new one below.</span>
             </div>
-          )}
+          ) : null}
 
           <div className="pt-4 border-t border-slate-100 dark:border-slate-800">
             <div className="space-y-3">
@@ -288,7 +360,7 @@ export default function VerificationPage() {
               <button
                 type="button"
                 onClick={handleNotMe}
-                disabled={isNotMeLoading || isLoading}
+                disabled={isNotMeLoading || isLoading || !token}
                 className="text-sm text-slate-600 dark:text-slate-400 hover:underline"
               >
                 {isNotMeLoading ? "Processing..." : "This wasn't me"}

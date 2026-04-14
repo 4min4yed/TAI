@@ -67,6 +67,22 @@ def test_expired_verification_token_is_rejected():
     assert expired is None
 
 
+def test_old_verification_token_is_rejected_after_new_token_is_issued():
+    db = _build_session()
+    user = _seed_user(db)
+
+    old_token = issue_verification_token(db, user.id, user.email)
+    old_record_initial = get_valid_token_record(db, old_token)
+    assert old_record_initial is not None
+
+    new_token = issue_verification_token(db, user.id, user.email)
+    new_record = get_valid_token_record(db, new_token)
+    assert new_record is not None
+
+    old_record_after_resend = get_valid_token_record(db, old_token)
+    assert old_record_after_resend is None
+
+
 def test_rate_limiter_blocks_excessive_requests():
     limiter = SlidingWindowRateLimiter()
     key = "signup:security@test.com"

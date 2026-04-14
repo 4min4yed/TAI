@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
 import LanguageSelector from "@/components/common/LanguageSelector";
+import { clearAuthSession, readUserProfile } from "@/lib/auth-storage";
 
 interface HeaderProps {
   title?: string;
@@ -24,6 +25,7 @@ interface HeaderProps {
 
 export default function Header({ title }: HeaderProps) {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [profile, setProfile] = useState(() => readUserProfile());
   const dropdownRef = useRef<HTMLDivElement>(null);
   const { theme, toggleTheme } = useTheme();
 
@@ -40,6 +42,29 @@ export default function Header({ title }: HeaderProps) {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  useEffect(() => {
+    const onStorage = () => setProfile(readUserProfile());
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
+  const fullName = profile
+    ? `${profile.first_name} ${profile.last_name}`.trim()
+    : "User";
+  const initials = fullName
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() || "")
+    .join("") || "U";
+  const roleLabel = profile?.role ? profile.role.charAt(0).toUpperCase() + profile.role.slice(1) : "Member";
+  const tenantName = profile?.tenant_name || "Organization";
+
+  const handleLogout = () => {
+    clearAuthSession();
+    window.location.href = "/login";
+  };
 
   return (
     <header className="h-16 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 sticky top-0 z-30">
@@ -101,14 +126,14 @@ export default function Header({ title }: HeaderProps) {
               className="flex items-center gap-3 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg p-2 transition-colors"
             >
               <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-white font-semibold text-sm shadow-sm">
-                AB
+                {initials}
               </div>
               <div className="hidden md:block text-left">
                 <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                  Ali ben Ali
+                  {fullName}
                 </p>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Admin - CompanyX
+                  {roleLabel} - {tenantName}
                 </p>
               </div>
               <ChevronDown
@@ -125,15 +150,15 @@ export default function Header({ title }: HeaderProps) {
                 <div className="p-4 bg-gradient-to-r from-primary-50 to-blue-50 dark:from-slate-700 dark:to-slate-700 border-b border-slate-200 dark:border-slate-700">
                   <div className="flex items-center gap-3">
                     <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-white font-bold shadow-md">
-                      AB
+                      {initials}
                     </div>
                     <div className="flex-1">
                       <h3 className="font-semibold text-slate-900 dark:text-white">
-                        Ali ben Ali
+                        {fullName}
                       </h3>
                       <p className="text-xs text-slate-600 dark:text-slate-400 flex items-center gap-1">
                         <Mail className="w-3 h-3" />
-                        ali.benali@companyx.com
+                        {profile?.email || "-"}
                       </p>
                     </div>
                   </div>
@@ -148,7 +173,7 @@ export default function Header({ title }: HeaderProps) {
                         Role
                       </p>
                       <p className="font-medium text-slate-900 dark:text-white">
-                        Admin
+                        {roleLabel}
                       </p>
                     </div>
                   </div>
@@ -159,7 +184,7 @@ export default function Header({ title }: HeaderProps) {
                         Company
                       </p>
                       <p className="font-medium text-slate-900 dark:text-white">
-                        CompanyX
+                        {tenantName}
                       </p>
                     </div>
                   </div>
@@ -208,7 +233,10 @@ export default function Header({ title }: HeaderProps) {
                     <Settings className="w-4 h-4" />
                     Settings
                   </button>
-                  <button className="w-full flex items-center gap-3 px-3 py-2 text-sm text-danger-600 dark:text-danger-400 hover:bg-danger-50 dark:hover:bg-danger-900/20 rounded-md transition-colors mt-1">
+                  <button
+                    onClick={handleLogout}
+                    className="w-full flex items-center gap-3 px-3 py-2 text-sm text-danger-600 dark:text-danger-400 hover:bg-danger-50 dark:hover:bg-danger-900/20 rounded-md transition-colors mt-1"
+                  >
                     <LogOut className="w-4 h-4" />
                     Logout
                   </button>

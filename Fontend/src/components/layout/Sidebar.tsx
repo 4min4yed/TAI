@@ -26,7 +26,7 @@ import {
   Shield,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import UserProfile from "./UserProfile";
+import { readUserProfile } from "@/lib/auth-storage";
 
 interface NavigationItem {
   id: string;
@@ -152,6 +152,8 @@ const navigationSections: NavigationSection[] = [
 export default function Sidebar() {
   const pathname = usePathname();
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const userProfile = readUserProfile();
+  const isOwner = String(userProfile?.role || "").toLowerCase() === "owner";
 
   const isActive = (href: string) => {
     // Exact match for root path
@@ -173,11 +175,11 @@ export default function Sidebar() {
       <div className="h-16 flex items-center justify-between px-6 border-b border-slate-200 dark:border-slate-700">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 bg-primary-600 dark:bg-primary-500 rounded-lg flex items-center justify-center">
-            <span className="text-white font-bold text-sm">FM</span>
+            <span className="text-white font-bold text-xs">TAI</span>
           </div>
           {!isCollapsed && (
             <span className="text-lg font-bold text-slate-900 dark:text-white">
-              Navigate
+              TenderAI
             </span>
           )}
         </div>
@@ -210,19 +212,28 @@ export default function Sidebar() {
               {section.items.map((item) => {
                 const Icon = item.icon;
                 const active = isActive(item.href);
+                const isSecurityItem = item.id === "security";
+                const isDisabled = isSecurityItem && !isOwner;
 
                 return (
                   <li key={item.id}>
                     <Link
-                      href={item.href}
+                      href={item.href as never}
                       className={cn(
                         "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all relative group",
                         active
                           ? "bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 shadow-sm"
                           : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white",
+                        isDisabled && "opacity-50 pointer-events-none cursor-not-allowed",
                         isCollapsed && "justify-center",
                       )}
-                      title={isCollapsed ? item.label : ""}
+                      title={isDisabled ? "Owner access only" : isCollapsed ? item.label : ""}
+                      aria-disabled={isDisabled}
+                      onClick={(event) => {
+                        if (isDisabled) {
+                          event.preventDefault();
+                        }
+                      }}
                     >
                       <Icon
                         className={cn(
@@ -266,15 +277,6 @@ export default function Sidebar() {
         ))}
       </nav>
 
-      {/* User Profile at Bottom */}
-      <div
-        className={cn(
-          "border-t border-slate-200 p-3",
-          isCollapsed && "flex justify-center",
-        )}
-      >
-        <UserProfile collapsed={isCollapsed} />
-      </div>
     </aside>
   );
 }

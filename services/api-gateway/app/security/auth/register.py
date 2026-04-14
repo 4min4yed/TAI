@@ -16,19 +16,38 @@ async def register_tenant(db, tenant_name: str, email: str, password: str, first
             raise HTTPException(status_code=429, detail="Too many signup attempts. Please try again later.")
 
         tenant = db.query(Tenant).filter(Tenant.name == tenant_name).first()
-        if not tenant:
-            tenant = Tenant(name=tenant_name)
-            db.add(tenant)
-            db.flush()
+        # Check if tenant exists with a verified owner, only if tenant exists
+        tenant_conflict = False
+        if tenant:
+            tenants_user = db.query(User).filter(User.tenant_id == tenant.id).first()
+            if tenants_user and tenants_user.is_verified:
+                tenant_conflict = True
+        
         user = db.query(User).filter(User.email == normalized_email).first()
+        email_conflict = user and user.is_verified
 
-        if user and user.is_verified:
+        if tenant_conflict or email_conflict:
+            # Build specific message based on what conflicts
+            if tenant_conflict and email_conflict:
+                message = "An account already exists with that tenant name and email."
+            elif tenant_conflict:
+                message = "An account already exists with that tenant name."
+            else:
+                message = "An account already exists with that email address."
+                print(message)
             return {
                 "status": "already_exists",
-                "message": "Account already exists - please log in",
+                "message": "Tenant or email already in use.",
             }
 
         if user and not user.is_verified:
+            # User exists but not verified - update their info and optionally change tenant
+            print("User exists but not verified, updating info")
+            if not tenant:
+                # Create new tenant if it doesn't exist
+                tenant = Tenant(name=tenant_name)
+                db.add(tenant)
+                db.flush()
             user.first_name = first_name
             user.last_name = last_name
             user.password_hash = hash_password(password)
@@ -36,6 +55,11 @@ async def register_tenant(db, tenant_name: str, email: str, password: str, first
             user.role = "owner"
             user.is_active = True
         else:
+            # New user - create tenant if it doesn't exist
+            if not tenant:
+                tenant = Tenant(name=tenant_name)
+                db.add(tenant)
+                db.flush()
             user = User(
                 first_name=first_name,
                 last_name=last_name,
@@ -49,7 +73,7 @@ async def register_tenant(db, tenant_name: str, email: str, password: str, first
             db.add(user)
 
         db.flush()
-        verification_token = issue_verification_token(db, user.id, user.email)
+        verification_token = issue_verification_token(db, user.id, user.email) 
         email_sent = await send_verification_email(user.email, user.id, verification_token)
         if not email_sent:
             raise HTTPException(
@@ -79,6 +103,6 @@ async def register_tenant(db, tenant_name: str, email: str, password: str, first
         db.rollback()
         raise
     except Exception as exc:
-        db.rollback() # Ensure we rollback on any exception to avoid leaving the session in an error state
+        db.rollback()
         logger.exception("Failed to register user %s: %s", email, exc)
         raise HTTPException(status_code=500, detail="Internal server error")

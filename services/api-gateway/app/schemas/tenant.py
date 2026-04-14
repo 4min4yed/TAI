@@ -6,5 +6,5 @@ class TenantCreate(BaseModel):
     description: str | None = None
 
 class TenantResponse(BaseModel):
-    id: int
+    id: str
     name: str

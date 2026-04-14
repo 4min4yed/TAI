@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -18,8 +19,11 @@ import {
   FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { readAccessToken, saveAuthSession } from "@/lib/auth-storage";
+import { getApiBaseUrl } from "@/lib/api-base";
 
 export default function LoginPage() {
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -31,6 +35,14 @@ export default function LoginPage() {
   const [showResendVerification, setShowResendVerification] = useState(false);
   const [emailError, setEmailError] = useState("");
   const [passwordError, setPasswordError] = useState("");
+  const apiBase = getApiBaseUrl();
+
+  useEffect(() => {
+    const token = readAccessToken();
+    if (token) {
+      router.replace("/");
+    }
+  }, [router]);
 
   const validateEmail = (email: string): boolean => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -76,21 +88,25 @@ export default function LoginPage() {
     setIsLoading(true);
 
     try {
-      const response = await fetch('http://127.0.0.1:8000/v1/auth/login', {
+      const response = await fetch(`${apiBase}/v1/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, rememberMe })
+        body: JSON.stringify({ email, password })
       });
+      const data = await response.json();
       if (!response.ok) {
-        const errorData = await response.json();
-        if (response.status === 403 && String(errorData?.detail || "").toLowerCase().includes("verify")) {
+        if (response.status === 403 && String(data?.detail || "").toLowerCase().includes("verify")) {
           setShowResendVerification(true);
           throw new Error("Please verify your email.");
         }
-        throw new Error(errorData.detail || "Login failed");
+        throw new Error(data?.detail || "Login failed");
       }
+
+      saveAuthSession(data, rememberMe);
       if (rememberMe) {
         localStorage.setItem("rememberMe", "true");
+      } else {
+        localStorage.removeItem("rememberMe");
       }    
       window.location.href = "/";
     } catch (err) {
@@ -111,7 +127,7 @@ export default function LoginPage() {
     setError("");
     setNotice("");
     try {
-      const response = await fetch("http://127.0.0.1:8000/v1/auth/resend-verification", {
+      const response = await fetch(`${apiBase}/v1/auth/resend-verification`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
