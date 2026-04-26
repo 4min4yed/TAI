@@ -17,6 +17,7 @@
  */
 
 import { ApiError, parseError } from "./errors";
+import { readAccessToken } from "@/lib/auth-storage";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL?.trim() || "http://localhost:8000";
@@ -99,7 +100,7 @@ export interface AuthRefresher {
 const defaultTokenProvider: TokenProvider = {
   getToken: () => {
     if (typeof window === "undefined") return null;
-    return sessionStorage.getItem("auth_token") || localStorage.getItem("auth_token");
+    return readAccessToken();
   },
 };
 

@@ -1,4 +1,14 @@
 import { getTimeRemaining, getUrgencyLevel, formatDate } from "../lib/utils";
+import { isTokenExpired } from "../lib/auth-storage";
+
+function buildUnsignedJwt(payload) {
+  const base64Url = (obj) =>
+    btoa(JSON.stringify(obj)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+
+  const header = base64Url({ alg: "HS256", typ: "JWT" });
+  const body = base64Url(payload);
+  return `${header}.${body}.signature`;
+}
 
 describe("Utility Functions", () => {
   describe("getTimeRemaining", () => {
@@ -49,6 +59,22 @@ describe("Utility Functions", () => {
       expect(formatted).toContain("Jan");
       expect(formatted).toContain("30");
       expect(formatted).toContain("2026");
+    });
+  });
+
+  describe("isTokenExpired", () => {
+    it("returns true for expired token", () => {
+      const token = buildUnsignedJwt({ exp: 1000 });
+      expect(isTokenExpired(token, 1000 * 1000 + 1)).toBe(true);
+    });
+
+    it("returns false for non-expired token", () => {
+      const token = buildUnsignedJwt({ exp: 3000 });
+      expect(isTokenExpired(token, 2000 * 1000)).toBe(false);
+    });
+
+    it("treats malformed token as expired", () => {
+      expect(isTokenExpired("not-a-jwt")).toBe(true);
     });
   });
 });

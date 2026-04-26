@@ -13,6 +13,7 @@ from app.security.auth.token_store import is_blacklisted
 
 
 def verify_jwt(token: str):
+    """Validate access token and return decoded payload claims."""
     return _verify_jwt(token, expected_type="access")
 
 
@@ -36,6 +37,7 @@ PUBLIC_PREFIXES = (
 
 class JWTAuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
+        """Attach JWT claims to request state for authenticated requests."""
         if request.url.path.startswith(PUBLIC_PREFIXES):
             middleware_trace(request, "JWTAuthMiddleware", stage="public_bypass")
             return await call_next(request)
@@ -58,6 +60,7 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
 
         jti = payload.get("jti")
         if jti and SessionLocal is not None:
+            # Blacklist checks make token revocation effective before expiry.
             db = SessionLocal()
             try:
                 if is_blacklisted(db, str(jti)):
@@ -74,7 +77,9 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
             request.state.tenant_id = str(payload.get("tenant_id"))
         return await call_next(request)
 
+
 async def jwt_auth_dependency(request: Request):
+    """Best-effort JWT decode dependency for routes that support optional auth."""
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
         return None

@@ -4,8 +4,9 @@ import { useState, useEffect } from "react";
 import { DashboardSummary, MetricCardData } from "@/types/dashboard";
 
 /**
- * Custom hook for fetching and managing dashboard metrics
- * Returns both raw summary data and formatted metric cards
+ * Build dashboard metrics state used by summary cards.
+ *
+ * Keeps both normalized summary data and view-ready card descriptors.
  */
 export function useDashboardMetrics() {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
@@ -22,7 +23,7 @@ export function useDashboardMetrics() {
       avgComplianceScore: 92.3,
     };
 
-    // Transform summary into metric cards
+    // Convert domain summary into UI card models in one place.
     const cards: MetricCardData[] = [
       {
         key: "activeTenders",

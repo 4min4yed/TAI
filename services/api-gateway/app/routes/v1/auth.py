@@ -16,6 +16,7 @@ from app.schemas.auth import (
     LoginResponse,
     LogoutRequest,
     MFAEnableRequest,
+    MFALoginDisableRequest,
     MFAVerifyLoginRequest,
     NotMeRequest,
     RefreshRequest,
@@ -39,6 +40,12 @@ from app.security.auth.jwt_handler import (
     create_mfa_challenge_token,
     token_expiry_from_claims,
     verify_jwt,
+)
+from app.security.auth.login_email_2fa import (
+    consume_login_email_code,
+    get_valid_login_email_code,
+    mark_login_email_code_failed,
+    verify_login_email_code,
 )
 from app.security.auth.mfa_handler import build_totp_uri, generate_totp_secret, verify_totp
 from app.security.auth.rate_limit import auth_rate_limiter
@@ -167,11 +174,24 @@ def _get_access_claims(request: Request) -> dict:
 @router.post("/login", response_model=LoginResponse)
 async def login(payload: LoginRequest, request: Request, response: Response, db=Depends(get_db)):
     request.state.db = db
+    normalized_email = payload.email.strip().lower()
+    ip = _client_ip(request) or "unknown"
+    if not auth_rate_limiter.allow(f"login:ip:{ip}", max_attempts=30, window_seconds=5 * 60):
+        raise HTTPException(status_code=429, detail="Too many login attempts. Please try again later.")
+    if not auth_rate_limiter.allow(f"login:email:{normalized_email}", max_attempts=12, window_seconds=10 * 60):
+        raise HTTPException(status_code=429, detail="Too many login attempts. Please try again later.")
+    if not auth_rate_limiter.allow(
+        f"login:2fa-send:{normalized_email}",
+        max_attempts=max(1, settings.EMAIL_LOGIN_2FA_SEND_LIMIT_PER_10_MIN),
+        window_seconds=10 * 60,
+    ):
+        raise HTTPException(status_code=429, detail="Too many verification code requests. Please try again later.")
+
     result = await login_user(
         db,
-        payload.email,
+        normalized_email,
         payload.password,
-        ip_address=_client_ip(request),
+        ip_address=ip,
         user_agent=request.headers.get("user-agent"),
     )
 
@@ -203,12 +223,39 @@ async def verify_login_2fa(payload: MFAVerifyLoginRequest, request: Request, res
     user = db.query(User).filter(User.id == str(challenge.get("sub"))).first()
     if not user or not user.is_active or not user.is_verified:
         raise HTTPException(status_code=401, detail="Invalid user")
-    if not user.is_2fa_enabled or not user.totp_secret:
-        raise HTTPException(status_code=400, detail="2FA is not enabled")
-    if not verify_totp(user.totp_secret, payload.code):
-        raise HTTPException(status_code=401, detail="Invalid TOTP code")
 
-    tenant_name = ""
+    ip = _client_ip(request) or "unknown"
+    if not auth_rate_limiter.allow(
+        f"login:2fa-verify-ip:{ip}",
+        max_attempts=max(1, settings.EMAIL_LOGIN_2FA_VERIFY_LIMIT_IP_PER_5_MIN),
+        window_seconds=5 * 60,
+    ):
+        raise HTTPException(status_code=429, detail="Too many verification attempts. Please try again later.")
+    if not auth_rate_limiter.allow(
+        f"login:2fa-verify-user:{user.id}",
+        max_attempts=max(1, settings.EMAIL_LOGIN_2FA_VERIFY_LIMIT_USER_PER_5_MIN),
+        window_seconds=5 * 60,
+    ):
+        raise HTTPException(status_code=429, detail="Too many verification attempts. Please try again later.")
+
+    challenge_jti = str(challenge.get("jti", ""))
+    if not challenge_jti:
+        raise HTTPException(status_code=401, detail="Invalid MFA challenge")
+
+    code_record = get_valid_login_email_code(db, challenge_jti=challenge_jti, user_id=user.id)
+    if not code_record:
+        raise HTTPException(status_code=401, detail="Verification code expired or invalid")
+    if not verify_login_email_code(code_record, payload.code):
+        mark_login_email_code_failed(db, code_record)
+        raise HTTPException(status_code=401, detail="Invalid verification code")
+
+    consume_login_email_code(db, code_record)
+
+    # Fetch tenant name
+    from app.models.tenant import Tenant
+    tenant = db.query(Tenant).filter(Tenant.id == user.tenant_id).first()
+    tenant_name = tenant.name if tenant else ""
+
     manager = SessionManager()
     result = manager.create_session(
         db,
@@ -219,6 +266,8 @@ async def verify_login_2fa(payload: MFAVerifyLoginRequest, request: Request, res
         last_name=user.last_name,
         email=user.email,
         tenant_name=tenant_name,
+        is_2fa_enabled=bool(user.is_2fa_enabled),
+        login_mfa_enabled=bool(getattr(user, "login_mfa_enabled", True)),
         ip_address=_client_ip(request),
         user_agent=request.headers.get("user-agent"),
     )
@@ -282,6 +331,11 @@ async def refresh_session(
         _clear_auth_cookies(response)
         raise HTTPException(status_code=401, detail="User not active")
 
+    # Fetch tenant name
+    from app.models.tenant import Tenant
+    tenant = db.query(Tenant).filter(Tenant.id == user.tenant_id).first()
+    tenant_name = tenant.name if tenant else ""
+
     manager = SessionManager()
     result = manager.create_session(
         db,
@@ -291,7 +345,9 @@ async def refresh_session(
         first_name=user.first_name,
         last_name=user.last_name,
         email=user.email,
-        tenant_name="",
+        tenant_name=tenant_name,
+        is_2fa_enabled=bool(user.is_2fa_enabled),
+        login_mfa_enabled=bool(getattr(user, "login_mfa_enabled", True)),
         ip_address=_client_ip(request),
         user_agent=request.headers.get("user-agent"),
         refresh_family=record.token_family,
@@ -445,6 +501,22 @@ async def disable_2fa(payload: MFAEnableRequest, request: Request, db=Depends(ge
     user.is_2fa_enabled = False
     db.commit()
     return {"status": "ok", "message": "2FA disabled"}
+
+
+@router.post("/2fa/login/disable", response_model=GenericAuthActionResponse)
+async def disable_login_mfa(payload: MFALoginDisableRequest, request: Request, db=Depends(get_db)):
+    request.state.db = db
+    claims = _get_access_claims(request)
+    user = db.query(User).filter(User.id == str(claims.get("sub"))).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+
+    if not verify_password(user.password_hash, payload.password):
+        raise HTTPException(status_code=401, detail="Invalid password")
+
+    user.login_mfa_enabled = False
+    db.commit()
+    return {"status": "ok", "message": "Login MFA disabled"}
 
 
 @router.post("/register", response_model=RegisterResponse)

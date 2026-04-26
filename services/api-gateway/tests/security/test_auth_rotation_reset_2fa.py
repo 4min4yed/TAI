@@ -1,10 +1,11 @@
 """Security tests for refresh rotation, forgot-password, and 2FA flows."""
 
+import importlib
+
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
-import pyotp
 
 from app.core.dependencies import get_db
 from app.core.security import hash_password, verify_password
@@ -57,16 +58,44 @@ def _seed_user(db):
     return user
 
 
+def _patch_login_email_2fa(monkeypatch, fixed_code: str = "123456"):
+    async def _fake_send(_email: str, _code: str) -> bool:
+        return True
+
+    login_email_2fa_module = importlib.import_module("app.security.auth.login_email_2fa")
+    login_user_module = importlib.import_module("app.security.auth.login_user")
+    monkeypatch.setattr(login_email_2fa_module, "generate_email_login_code", lambda: fixed_code)
+    monkeypatch.setattr(login_user_module, "send_login_email_code", _fake_send)
+
+
+def _reset_rate_limit_state():
+    middleware_rate_module = importlib.import_module("app.middleware.rate_limit")
+    auth_rate_module = importlib.import_module("app.security.auth.rate_limit")
+    middleware_rate_module._BUCKETS.clear()
+    auth_rate_module.auth_rate_limiter._events.clear()
+
+
+def _login_and_verify(client: TestClient, *, email: str, password: str, code: str = "123456") -> dict:
+    login = client.post("/v1/auth/login", json={"email": email, "password": password})
+    assert login.status_code == 200
+    assert login.json()["mfa_required"] is True
+    challenge = login.json()["mfa_token"]
+    verify = client.post("/v1/auth/2fa/verify-login", json={"mfa_token": challenge, "code": code})
+    assert verify.status_code == 200
+    return verify.json()
+
+
 def test_refresh_token_rotation_and_reuse_detection(monkeypatch):
     db = _build_session()
     _seed_user(db)
     _override_db(db)
+    _patch_login_email_2fa(monkeypatch)
+    _reset_rate_limit_state()
 
     try:
         with TestClient(app) as client:
-            login = client.post("/v1/auth/login", json={"email": "auth@test.com", "password": "StrongPass123"})
-            assert login.status_code == 200
-            first_refresh = login.json()["refresh_token"]
+            verified = _login_and_verify(client, email="auth@test.com", password="StrongPass123")
+            first_refresh = verified["refresh_token"]
 
             refresh_once = client.post("/v1/auth/refresh", json={"refresh_token": first_refresh})
             assert refresh_once.status_code == 200
@@ -90,6 +119,7 @@ def test_forgot_password_flow_updates_password(monkeypatch):
 
     monkeypatch.setattr("app.routes.v1.auth._send_password_reset_email", _fake_send)
     _override_db(db)
+    _reset_rate_limit_state()
 
     try:
         with TestClient(app) as client:
@@ -117,40 +147,47 @@ def test_forgot_password_flow_updates_password(monkeypatch):
         db.close()
 
 
-def test_login_with_2fa_challenge_and_verification():
+def test_login_with_email_2fa_challenge_and_verification(monkeypatch):
     db = _build_session()
     _seed_user(db)
     _override_db(db)
+    _patch_login_email_2fa(monkeypatch)
+    _reset_rate_limit_state()
+
+    try:
+        with TestClient(app) as client:
+            verify_payload = _login_and_verify(client, email="auth@test.com", password="StrongPass123")
+            assert verify_payload["access_token"]
+    finally:
+        app.dependency_overrides.clear()
+        db.close()
+
+
+def test_email_2fa_invalid_code_attempt_lockout(monkeypatch):
+    db = _build_session()
+    _seed_user(db)
+    _override_db(db)
+    _patch_login_email_2fa(monkeypatch)
+    _reset_rate_limit_state()
 
     try:
         with TestClient(app) as client:
             login = client.post("/v1/auth/login", json={"email": "auth@test.com", "password": "StrongPass123"})
             assert login.status_code == 200
-            access = login.json()["access_token"]
+            challenge = login.json()["mfa_token"]
 
-            setup = client.post("/v1/auth/2fa/setup", headers={"Authorization": f"Bearer {access}"})
-            assert setup.status_code == 200
-            secret = setup.json()["secret"]
-            code = pyotp.TOTP(secret).now()
+            for _ in range(5):
+                invalid = client.post(
+                    "/v1/auth/2fa/verify-login",
+                    json={"mfa_token": challenge, "code": "000000"},
+                )
+                assert invalid.status_code == 401
 
-            enable = client.post(
-                "/v1/auth/2fa/enable",
-                json={"code": code},
-                headers={"Authorization": f"Bearer {access}"},
-            )
-            assert enable.status_code == 200
-
-            mfa_login = client.post("/v1/auth/login", json={"email": "auth@test.com", "password": "StrongPass123"})
-            assert mfa_login.status_code == 200
-            assert mfa_login.json()["mfa_required"] is True
-            challenge = mfa_login.json()["mfa_token"]
-
-            verify = client.post(
+            blocked = client.post(
                 "/v1/auth/2fa/verify-login",
-                json={"mfa_token": challenge, "code": pyotp.TOTP(secret).now()},
+                json={"mfa_token": challenge, "code": "123456"},
             )
-            assert verify.status_code == 200
-            assert verify.json()["access_token"]
+            assert blocked.status_code == 401
     finally:
         app.dependency_overrides.clear()
         db.close()

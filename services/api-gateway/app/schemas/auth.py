@@ -15,6 +15,8 @@ class LoginUserPayload(StrictSchema):
     role: str
     tenant_id: str
     tenant_name: str
+    is_2fa_enabled: bool
+    login_mfa_enabled: bool
 
 
 class LoginResponse(StrictSchema):
@@ -111,3 +113,7 @@ class MFAEnableRequest(StrictSchema):
 
 class MFADisableRequest(StrictSchema):
     code: str
+
+
+class MFALoginDisableRequest(StrictSchema):
+    password: str

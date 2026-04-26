@@ -1,3 +1,6 @@
+/**
+ * Resolve API base URL with env override and browser-aware fallback.
+ */
 export function getApiBaseUrl(): string {
   const fromEnv = process.env.NEXT_PUBLIC_API_BASE_URL?.trim();
   if (fromEnv) {

@@ -16,6 +16,7 @@ settings = Settings()
 
 
 def _parse_key_ring() -> dict[str, dict[str, str]]:
+    """Parse configured key ring as {kid: {alg, private_key, public_key}}."""
     raw = (settings.JWT_KEY_RING_JSON or "").strip()
     if not raw:
         return {}
@@ -42,15 +43,18 @@ def _parse_key_ring() -> dict[str, dict[str, str]]:
 
 
 def utc_now() -> datetime:
+    """Return timezone-aware UTC now for claim generation."""
     return datetime.now(timezone.utc)
 
 
 def _allowed_algorithms() -> list[str]:
+    """Read allowed verification/signing algorithms from settings."""
     raw = settings.JWT_ALGORITHMS or "HS256"
     return [alg.strip() for alg in raw.split(",") if alg.strip()]
 
 
 def _jwt_key_for_algorithm(algorithm: str, for_signing: bool) -> str:
+    """Return key material for a given algorithm and operation."""
     if algorithm == "HS256":
         return settings.JWT_SECRET
     if algorithm == "RS256":
@@ -61,6 +65,7 @@ def _jwt_key_for_algorithm(algorithm: str, for_signing: bool) -> str:
 
 
 def _select_signing_algorithm() -> str:
+    """Pick strongest configured algorithm in priority order."""
     for candidate in ("EdDSA", "RS256", "HS256"):
         if candidate not in _allowed_algorithms():
             continue
@@ -71,6 +76,11 @@ def _select_signing_algorithm() -> str:
 
 
 def _resolve_signing_material() -> tuple[str, str, str | None]:
+    """Resolve signing algorithm, key and optional KID.
+
+    If an active KID is configured and valid, use it to support key rotation
+    without redeploying application code.
+    """
     key_ring = _parse_key_ring()
     active_kid = (settings.JWT_ACTIVE_KID or "").strip()
     if active_kid and active_kid in key_ring:
@@ -89,6 +99,7 @@ def _resolve_signing_material() -> tuple[str, str, str | None]:
 
 
 def _resolve_verify_key(algorithm: str, kid: str | None) -> str:
+    """Resolve verification key from key ring or algorithm defaults."""
     key_ring = _parse_key_ring()
     if kid and kid in key_ring:
         entry = key_ring[kid]
@@ -107,6 +118,7 @@ def _resolve_verify_key(algorithm: str, kid: str | None) -> str:
 
 
 def _base_claims(user_id: str, tenant_id: str, role: str, token_type: str, ttl: timedelta) -> dict[str, Any]:
+    """Build standard JWT claims shared by all token types."""
     now = utc_now()
     return {
         "sub": str(user_id),
@@ -124,12 +136,14 @@ def _base_claims(user_id: str, tenant_id: str, role: str, token_type: str, ttl: 
 
 
 def _encode(payload: dict[str, Any]) -> str:
+    """Encode payload with selected signing material and optional KID header."""
     algorithm, key, kid = _resolve_signing_material()
     headers = {"kid": kid} if kid else None
     return jwt.encode(payload, key, algorithm=algorithm, headers=headers)
 
 
 def create_access_token(user_id: str, tenant_id: str, role: str) -> tuple[str, dict[str, Any]]:
+    """Create short-lived access token and return token plus claims."""
     claims = _base_claims(
         user_id=user_id,
         tenant_id=tenant_id,
@@ -141,6 +155,7 @@ def create_access_token(user_id: str, tenant_id: str, role: str) -> tuple[str, d
 
 
 def create_refresh_token(user_id: str, tenant_id: str, role: str, family_id: str | None = None) -> tuple[str, dict[str, Any]]:
+    """Create refresh token; `family` enables refresh-token rotation tracking."""
     claims = _base_claims(
         user_id=user_id,
         tenant_id=tenant_id,
@@ -153,6 +168,7 @@ def create_refresh_token(user_id: str, tenant_id: str, role: str, family_id: str
 
 
 def create_mfa_challenge_token(user_id: str, tenant_id: str, role: str) -> tuple[str, dict[str, Any]]:
+    """Create short-lived token representing an MFA challenge session."""
     claims = _base_claims(
         user_id=user_id,
         tenant_id=tenant_id,
@@ -164,6 +180,7 @@ def create_mfa_challenge_token(user_id: str, tenant_id: str, role: str) -> tuple
 
 
 def verify_jwt(token: str, expected_type: str = "access") -> dict[str, Any]:
+    """Decode and validate token signature, issuer/audience and token type."""
     header = jwt.get_unverified_header(token)
     algorithm = header.get("alg", "")
     kid = header.get("kid")
@@ -183,11 +200,11 @@ def verify_jwt(token: str, expected_type: str = "access") -> dict[str, Any]:
     token_type = payload.get("type")
     if expected_type and token_type != expected_type:
         raise jwt.InvalidTokenError(f"Unexpected token type: {token_type}")
-
     return payload
 
 
 def token_expiry_from_claims(payload: dict[str, Any]) -> datetime:
+    """Convert `exp` claim to timezone-aware UTC datetime."""
     return datetime.fromtimestamp(int(payload["exp"]), tz=timezone.utc)
 
 

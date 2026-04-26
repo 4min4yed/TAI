@@ -1,2 +1,0 @@
-# Example cookies for manual testing (development only)
-# Name=Value; Path=/; HttpOnly; Secure

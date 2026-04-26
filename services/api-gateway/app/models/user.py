@@ -18,5 +18,6 @@ class User(Base):
     role = Column(String, nullable=False, default='user')
     is_active = Column(Boolean, default=True)
     is_2fa_enabled = Column(Boolean, default=False)
+    login_mfa_enabled = Column(Boolean, default=True)
     is_verified = Column(Boolean, default=False)
     totp_secret = Column(String(64), nullable=True)

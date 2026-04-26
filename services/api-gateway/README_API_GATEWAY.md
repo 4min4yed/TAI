@@ -27,3 +27,20 @@ Developer notes:
 	- `EMAIL_VERIFICATION_TTL_MINUTES` (default: `30`)
 
 If you add DB schema changes, include a migration under `alembic/versions/` and update `alembic/README.md`.
+
+JWT Security Audit CLI:
+- Script: `jwt_security_audit.py`
+- Goal: run OWASP-aligned JWT security checks against this service and static code patterns.
+- Help:
+	- `python jwt_security_audit.py -h`
+- Run all checks with auto token retrieval:
+	- `python jwt_security_audit.py --base-url http://127.0.0.1:8000 --username you@example.com --password "your-password" --mfa-code 123456`
+- Run specific checks:
+	- `python jwt_security_audit.py --check none-alg-acceptance --check weak-secret --token "<JWT>"`
+- Save JSON report:
+	- `python jwt_security_audit.py --username you@example.com --password "your-password" --output reports/jwt-audit.json`
+
+Notes:
+- Some checks are active endpoint tests and require a valid token plus a protected endpoint.
+- If login requires MFA, provide `--mfa-code` (or env `JWT_AUDIT_MFA_CODE`) so token retrieval can complete.
+- Static checks include insecure defaults, PyJWT misuse patterns, and frontend token storage risk patterns.

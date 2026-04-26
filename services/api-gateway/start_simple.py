@@ -9,4 +9,4 @@ if __name__ == "__main__":
             "Use the project virtualenv: .venv\\Scripts\\python.exe -m pip install -r services/api-gateway/requirements.txt"
         ) from exc
 
-    uvicorn.run("app.main:app", host="127.0.0.1", port=8000, reload=True)
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)

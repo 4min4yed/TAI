@@ -34,10 +34,10 @@ echo [3/3] Starting development server...
 echo.
 echo ========================================
 echo   Dashboard will open at:
-echo   http://localhost:3000
+echo   http://0.0.0.0:3000
 echo.
 echo   Press Ctrl+C to stop server
 echo ========================================
 echo.
-call npm run dev
+call npm run dev -- --hostname 0.0.0.0
 pause

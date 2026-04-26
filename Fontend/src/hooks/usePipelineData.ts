@@ -15,7 +15,10 @@ export interface PipelineData {
 }
 
 /**
- * Custom hook for fetching and managing pipeline data
+ * Manage pipeline list state for dashboard widgets.
+ *
+ * Starts with mock data for local UI development and exposes a refresh method
+ * that can be wired to the backend endpoint when available.
  */
 export function usePipelineData() {
   const [data, setData] = useState<PipelineData[]>([]);
@@ -80,6 +83,7 @@ export function usePipelineData() {
     return () => clearTimeout(timer);
   }, []);
 
+  /** Refresh pipeline data from API and keep existing error/loading semantics. */
   const refreshData = async () => {
     setLoading(true);
     try {

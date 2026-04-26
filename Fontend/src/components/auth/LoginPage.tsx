@@ -26,6 +26,9 @@ export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [mfaCode, setMfaCode] = useState("");
+  const [mfaToken, setMfaToken] = useState<string | null>(null);
+  const [mfaRequired, setMfaRequired] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -102,17 +105,77 @@ export default function LoginPage() {
         throw new Error(data?.detail || "Login failed");
       }
 
+      if (data?.mfa_required && data?.mfa_token) {
+        setMfaRequired(true);
+        setMfaToken(String(data.mfa_token));
+        setMfaCode("");
+        setNotice("A verification code was sent to your email. Enter it to finish signing in.");
+        return;
+      }
+
+      if (!data?.access_token) {
+        throw new Error("Login response is missing access token.");
+      }
+
       saveAuthSession(data, rememberMe);
       if (rememberMe) {
         localStorage.setItem("rememberMe", "true");
       } else {
         localStorage.removeItem("rememberMe");
-      }    
+      }
       window.location.href = "/";
     } catch (err) {
       const message = err instanceof Error ? err.message : "Invalid email or password. Please try again.";
       setError(message);
       console.error("Login error:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleVerifyCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setNotice("");
+
+    if (!mfaToken) {
+      setError("Missing MFA challenge. Please sign in again.");
+      setMfaRequired(false);
+      return;
+    }
+
+    if (!/^\d{6}$/.test(mfaCode.trim())) {
+      setError("Enter the 6-digit code sent to your email.");
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const response = await fetch(`${apiBase}/v1/auth/2fa/verify-login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mfa_token: mfaToken, code: mfaCode.trim() }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.detail || "Verification failed");
+      }
+
+      if (!data?.access_token) {
+        throw new Error("Verification response is missing access token.");
+      }
+
+      saveAuthSession({ ...data, mfa_verified: true }, rememberMe);
+      if (rememberMe) {
+        localStorage.setItem("rememberMe", "true");
+      } else {
+        localStorage.removeItem("rememberMe");
+      }
+      window.location.href = "/";
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Invalid verification code.";
+      setError(message);
+      console.error("2FA verify error:", err);
     } finally {
       setIsLoading(false);
     }
@@ -357,6 +420,7 @@ export default function LoginPage() {
             )}
 
             {/* Email/Password Form */}
+            {!mfaRequired ? (
             <form onSubmit={handleEmailLogin} className="space-y-4">
               {/* Email Input */}
               <div>
@@ -482,6 +546,65 @@ export default function LoginPage() {
                 )}
               </Button>
             </form>
+            ) : (
+              <form onSubmit={handleVerifyCode} className="space-y-4">
+                <div>
+                  <label
+                    htmlFor="mfaCode"
+                    className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2"
+                  >
+                    Email Verification Code
+                  </label>
+                  <input
+                    id="mfaCode"
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={6}
+                    required
+                    placeholder="123456"
+                    value={mfaCode}
+                    onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    className="w-full px-4 py-3 border border-slate-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder:text-slate-400 tracking-[0.35em] text-center text-lg"
+                  />
+                  <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                    We sent a 6-digit code to {email}.
+                  </p>
+                </div>
+
+                <Button
+                  type="submit"
+                  className="w-full justify-center gap-2 h-11"
+                  disabled={isLoading}
+                >
+                  {isLoading ? (
+                    <>
+                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span>Verifying...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Verify Code</span>
+                      <ArrowRight className="w-5 h-5" />
+                    </>
+                  )}
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => {
+                    setMfaRequired(false);
+                    setMfaToken(null);
+                    setMfaCode("");
+                    setNotice("");
+                  }}
+                  disabled={isLoading}
+                >
+                  Use another account
+                </Button>
+              </form>
+            )}
 
             {/* Sign Up Link */}
             <div className="mt-6 text-center">

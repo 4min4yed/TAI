@@ -18,6 +18,9 @@ interface I18nContextType {
 
 const I18nContext = createContext<I18nContextType | undefined>(undefined);
 
+/**
+ * Provides translation lookup and language direction (LTR/RTL) to the app.
+ */
 export function I18nProvider({ children }: { children: ReactNode }) {
   const [language, setLanguageState] = useState<Language>("en");
   const [mounted, setMounted] = useState(false);
@@ -37,12 +40,14 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     updateDocumentDirection(lang);
   };
 
+  /** Keep html lang/dir in sync so layout and accessibility remain correct. */
   const updateDocumentDirection = (lang: Language) => {
     const isRTL = lang === "ar";
     document.documentElement.dir = isRTL ? "rtl" : "ltr";
     document.documentElement.lang = lang;
   };
 
+  /** Resolve nested translation keys like `dashboard.metrics.active`. */
   const t = (key: string): string => {
     const keys = key.split(".");
     let value: any = translations[language];
